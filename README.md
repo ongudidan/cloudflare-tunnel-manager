@@ -1,102 +1,127 @@
-# Cloudflare Tunnel Manager
-
-A powerful and interactive Bash script to manage [Cloudflare Tunnels](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/) from your terminal with ease. Supports creation, routing, service management, and full cleanup. Configurations are stored in user space (`~/.cloudflared`) to avoid system-level conflicts.
+**Cloudflare Tunnel Manager**
+A powerful and interactive Bash script to manage Cloudflare Tunnels from your terminal with ease. Supports creation, routing, service management, and full cleanup. Configurations are stored in user space (`~/.cloudflared`) to avoid system-level conflicts.
 
 ---
 
-## 📦 Features
+**📦 Features**
 
-* Install and authenticate `cloudflared`
+* Install and authenticate cloudflared
 * Create and delete tunnels
 * Edit tunnel config (ingress rules)
 * Route subdomains to tunnels
 * Run tunnels manually
 * Enable or disable auto-start on boot (via systemd)
-* View/Restart/Stop service status
+* View / Restart / Stop service status
 * Full cleanup of tunnels and services
 
 ---
 
-## 🛠️ Installation
-
+**🛠️ Installation**
 Clone the repo or download the script manually:
 
-```bash
-git clone https://github.com/ongudidan/cloudflare-tunnel-manager.git
-cd cloudflare-tunnel-manager
-chmod +x ./cloudflare-tunnel-manager.sh
+```
+git clone https://github.com/ongudidan/cloudflare-tunnel-manager.git  
+cd cloudflare-tunnel-manager  
+chmod +x ./cloudflare-tunnel-manager.sh  
 ```
 
 Then run the script:
 
-```bash
+```
 ./cloudflare-tunnel-manager.sh
 ```
 
 ---
 
-## 📘 Usage Guide
-
+**📘 Usage Guide**
 Once launched, use the interactive menu to manage tunnels.
-
-### 1. Install cloudflared
-
-Downloads and installs the latest `cloudflared` binary.
-
-### 2. Authenticate with Cloudflare
-
-Launches the browser to log in to your Cloudflare account.
-
-### 3. Create a New Tunnel
-
-Prompts for a name, creates a tunnel, and auto-generates a YAML config file in `~/.cloudflared/`.
-
-### 4. Edit Tunnel Config (Ingress Rules)
-
-Edit the YAML file using `nano` to change subdomain mappings or ports.
-
-### 5. Route Subdomains to Tunnel
-
-Add DNS routes to connect a subdomain to the tunnel.
-
-### 6. Run Tunnel Manually
-
-Start the tunnel without enabling auto-start.
-
-### 7. Enable/Disable Auto-Start
-
-Lets you choose whether to auto-start the tunnel via a systemd service at boot. Uses your personal config.
-
-### 8. Restart / Stop / View Tunnel Service
-
-Manage the `cloudflared` systemd service:
-
-* Restart the service
-* Stop it
-* Check its status
-* View logs
-
-### 9. Delete cloudflared Service
-
-Stops and deletes the system-wide `cloudflared` systemd service.
-
-### 10. Full Uninstall and Cleanup
-
-Completely removes `cloudflared`, tunnels, configs, credentials, and the systemd service.
-
-### 11. Delete a Tunnel
-
-Fully deletes a specific tunnel from Cloudflare and removes local credentials/config.
-
-### 0. Exit
-
-Quits the script.
 
 ---
 
-## 📁 Directory Structure
+**1. Install cloudflared**
+Downloads and installs the latest cloudflared binary.
 
-All configs and credentials are stored in:
+---
+
+**2. Authenticate with Cloudflare**
+Launches the browser to log in to your Cloudflare account.
+
+👉 **If you're on a server (headless environment):**
+When this option is selected, `cloudflared` will output a login link in the terminal.
+Copy that link and open it in a browser from any device where you're logged in to Cloudflare.
+Once approved, the server will save `cert.pem` in `~/.cloudflared/` and you're good to go.
+
+✅ Alternatively, you can copy the cert file from another authenticated machine using `scp`:
+
+```
+scp ~/.cloudflared/cert.pem user@your-server-ip:~/.cloudflared/
+```
+
+---
+
+**3. Create a New Tunnel**
+Prompts for a tunnel name, creates it, and auto-generates the config file (`.yml`) in `~/.cloudflared/`.
+
+---
+
+**4. Edit Tunnel Config (Ingress Rules)**
+Opens the YAML file in nano for editing subdomain routes and services (e.g. ports).
+
+---
+
+**5. Route Subdomains to Tunnel**
+Adds DNS routes for subdomains pointing to the tunnel.
+
+---
+
+**6. Run Tunnel Manually**
+Starts the tunnel without needing systemd or auto-start.
+
+---
+
+**7. Enable/Disable Auto-Start**
+Lets you choose to either enable or disable automatic startup of the tunnel using systemd.
+Conflicting configs in `/etc/cloudflared/config.yml` will be detected and removed upon confirmation.
+
+---
+
+**8. Restart / Stop / View Tunnel Service**
+Lets you manage the cloudflared systemd service:
+
+* Restart it
+* Stop it
+* Check its status
+* View logs in real-time
+
+---
+
+**9. Delete cloudflared Service**
+Stops and removes the system-wide cloudflared service (systemd).
+
+---
+
+**10. Full Uninstall and Cleanup**
+Completely removes everything — including:
+
+* Installed binary
+* Credentials and configs
+* Systemd service
+* `.deb` installer file
+
+---
+
+**11. Delete a Tunnel**
+Deletes a specific tunnel from Cloudflare and removes related local files.
+
+---
+
+**0. Exit**
+Closes the menu and quits the script.
+
+---
+
+**📁 Directory Structure**
+All configuration and credentials are saved in:
 
 ```
 ~/.cloudflared/
@@ -107,23 +132,24 @@ All configs and credentials are stored in:
 
 ---
 
-## ⚠️ Notes
+**⚠️ Notes**
 
-* Avoid manually using `/etc/cloudflared/config.yml` to prevent conflicts.
-* When enabling auto-start, any conflicting system-wide config is removed after confirmation.
+* Avoid using `/etc/cloudflared/config.yml` directly — it may override your tunnel configs.
+* When enabling auto-start, the script will remove conflicting system configs after your approval.
 
 ---
 
-## 👨‍💻 Author
-
-**Dan Ong'udi**
+**👨‍💻 Author**
+Dan Ong'udi
 📧 [ongudidan@gmail.com](mailto:ongudidan@gmail.com)
-🌐 [github.com/ongudidan](https://github.com/ongudidan)
+🌐 github.com/ongudidan
 
-Feel free to open issues or suggestions on the GitHub repository.
+Feel free to open issues or make suggestions via GitHub.
 
 ---
 
-## 📜 License
-
+**📜 License**
 MIT License
+
+---
+
