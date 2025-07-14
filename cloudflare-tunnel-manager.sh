@@ -88,18 +88,52 @@ EOF
   echo "🔙 Now run option 4 to edit the config, or 5 to add DNS routes."
 }
 
+# edit_tunnel_config() {
+#   select_tunnel || return 1
+#   TUNNEL_CONFIG="$CLOUDFLARED_DIR/$TUNNEL_NAME.yml"
+
+#   if [ ! -f "$TUNNEL_CONFIG" ]; then
+#     echo "❌ Config file not found for '$TUNNEL_NAME'."
+#     return 1
+#   fi
+
+#   echo "📄 Opening $TUNNEL_CONFIG"
+#   nano "$TUNNEL_CONFIG"
+# }
+
+
 edit_tunnel_config() {
   select_tunnel || return 1
+  TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
   TUNNEL_CONFIG="$CLOUDFLARED_DIR/$TUNNEL_NAME.yml"
+  CREDENTIALS_FILE="$CLOUDFLARED_DIR/$TUNNEL_ID.json"
 
   if [ ! -f "$TUNNEL_CONFIG" ]; then
-    echo "❌ Config file not found for '$TUNNEL_NAME'."
-    return 1
+    echo "⚠️ Config file for '$TUNNEL_NAME' not found."
+    echo "🛠️  Creating default config at $TUNNEL_CONFIG"
+    cat > "$TUNNEL_CONFIG" <<EOF
+tunnel: $TUNNEL_ID
+credentials-file: $CREDENTIALS_FILE
+
+ingress:
+  # Subdomain 1 (e.g., dev server)
+  - hostname: dev.fortunedevs.com
+    service: http://localhost:80  # Change to your local server port (e.g., port 80)
+
+  # Subdomain 2 (optional, admin dashboard)
+  - hostname: admin.fortunedevs.com
+    service: http://localhost:8080
+
+  # Catch-all fallback for undefined subdomains
+  - service: http_status:404
+EOF
+    echo "✅ Default config created."
   fi
 
   echo "📄 Opening $TUNNEL_CONFIG"
   nano "$TUNNEL_CONFIG"
 }
+
 
 route_dns() {
   select_tunnel || return 1
