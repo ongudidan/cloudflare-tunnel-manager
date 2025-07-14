@@ -57,7 +57,8 @@ create_tunnel() {
   cloudflared tunnel create "$TUNNEL_NAME"
 
   echo "🔍 Getting Tunnel ID..."
-  TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+  TUNNEL_ID=$(cloudflared tunnel list | awk -v name="$TUNNEL_NAME" '$2 == name {print $1; exit}')
+
   CREDENTIALS_FILE="$CLOUDFLARED_DIR/$TUNNEL_ID.json"
   TUNNEL_CONFIG="$CLOUDFLARED_DIR/$TUNNEL_NAME.yml"
 
@@ -104,7 +105,8 @@ EOF
 
 edit_tunnel_config() {
   select_tunnel || return 1
-  TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+    TUNNEL_ID=$(cloudflared tunnel list | awk -v name="$TUNNEL_NAME" '$2 == name {print $1; exit}')
+
   TUNNEL_CONFIG="$CLOUDFLARED_DIR/$TUNNEL_NAME.yml"
   CREDENTIALS_FILE="$CLOUDFLARED_DIR/$TUNNEL_ID.json"
 
@@ -264,7 +266,7 @@ full_cleanup() {
 
 delete_tunnel() {
   select_tunnel || return 1
-  TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+  TUNNEL_ID=$(cloudflared tunnel list | awk -v name="$TUNNEL_NAME" '$2 == name {print $1; exit}')
   [ -n "$TUNNEL_ID" ] || { echo "❌ Unable to find tunnel ID for '$TUNNEL_NAME'."; return 1; }
 
   echo "⚠️  Are you sure you want to delete tunnel '$TUNNEL_NAME' (ID: $TUNNEL_ID)? This cannot be undone."
