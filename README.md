@@ -22,7 +22,7 @@ A powerful and interactive Bash script to manage [Cloudflare Tunnels](https://de
 Clone the repo or download the script manually:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/cloudflare-tunnel-manager.git
+git clone https://github.com/ongudidan/cloudflare-tunnel-manager.git
 cd cloudflare-tunnel-manager
 chmod +x ./cloudflare-tunnel-manager.sh
 ```
@@ -118,7 +118,7 @@ All configs and credentials are stored in:
 
 **Dan Ong'udi**
 📧 [ongudidan@gmail.com](mailto:ongudidan@gmail.com)
-🌐 [github.com/your\_username](https://github.com/your_username)
+🌐 [github.com/your\_username](https://github.com/ongudidan)
 
 Feel free to open issues or suggestions on the GitHub repository.
 
