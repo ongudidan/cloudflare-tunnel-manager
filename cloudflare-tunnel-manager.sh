@@ -264,6 +264,21 @@ full_cleanup() {
   echo "✅ Everything removed."
 }
 
+# delete_tunnel() {
+#   select_tunnel || return 1
+#   TUNNEL_ID=$(cloudflared tunnel list | awk -v name="$TUNNEL_NAME" '$2 == name {print $1; exit}')
+#   [ -n "$TUNNEL_ID" ] || { echo "❌ Unable to find tunnel ID for '$TUNNEL_NAME'."; return 1; }
+
+#   echo "⚠️  Are you sure you want to delete tunnel '$TUNNEL_NAME' (ID: $TUNNEL_ID)? This cannot be undone."
+#   read -p "Type 'yes' to confirm: " confirm
+#   [ "$confirm" = "yes" ] || { echo "❌ Cancelled."; return 1; }
+
+#   cloudflared tunnel delete "$TUNNEL_NAME"
+#   rm -f "$CLOUDFLARED_DIR/$TUNNEL_ID.json" "$CLOUDFLARED_DIR/$TUNNEL_NAME.yml"
+#   echo "🗑️ Tunnel '$TUNNEL_NAME' and related files removed."
+# }
+
+
 delete_tunnel() {
   select_tunnel || return 1
   TUNNEL_ID=$(cloudflared tunnel list | awk -v name="$TUNNEL_NAME" '$2 == name {print $1; exit}')
@@ -273,10 +288,24 @@ delete_tunnel() {
   read -p "Type 'yes' to confirm: " confirm
   [ "$confirm" = "yes" ] || { echo "❌ Cancelled."; return 1; }
 
-  cloudflared tunnel delete "$TUNNEL_NAME"
+  echo "🛑 Stopping any running cloudflared services..."
+  sudo systemctl stop cloudflared 2>/dev/null || true
+  pkill -f "cloudflared.*$TUNNEL_NAME" 2>/dev/null || true
+
+  echo "🧹 Cleaning up tunnel connections..."
+  cloudflared tunnel cleanup "$TUNNEL_NAME"
+
+  echo "🗑️ Attempting to delete the tunnel..."
+  if ! cloudflared tunnel delete "$TUNNEL_NAME"; then
+    echo "❌ Failed to delete tunnel. Please ensure no active cloudflared processes are using it."
+    echo "   Run this to check: ps aux | grep cloudflared"
+    return 1
+  fi
+
   rm -f "$CLOUDFLARED_DIR/$TUNNEL_ID.json" "$CLOUDFLARED_DIR/$TUNNEL_NAME.yml"
-  echo "🗑️ Tunnel '$TUNNEL_NAME' and related files removed."
+  echo "✅ Tunnel '$TUNNEL_NAME' and related files removed."
 }
+
 
 while true; do
   show_menu
