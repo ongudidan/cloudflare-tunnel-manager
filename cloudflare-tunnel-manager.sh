@@ -255,28 +255,35 @@ delete_config_and_service() {
   echo "✅ System cloudflared service removed."
 }
 
+# full_cleanup() {
+#   delete_config_and_service
+#   sudo rm -f "$CLOUDFLARED_DIR"/*.json "$CLOUDFLARED_DIR"/*.yml "$CLOUDFLARED_DIR"/cert.pem
+#   sudo rm -f cloudflared-linux-amd64.deb
+#   sudo rm -f $(which cloudflared)
+#   sudo apt remove cloudflared -y
+#   echo "✅ Everything removed."
+# }
+
+
 full_cleanup() {
+  echo "⚠️  This will completely remove cloudflared, all tunnels, configs, credentials, and services from your system."
+  echo "❌ This action is irreversible and should only be done if you want a full reset."
+
+  read -p "Are you sure you want to proceed? [y/N]: " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "❌ Full cleanup cancelled."
+    return 1
+  fi
+
   delete_config_and_service
   sudo rm -f "$CLOUDFLARED_DIR"/*.json "$CLOUDFLARED_DIR"/*.yml "$CLOUDFLARED_DIR"/cert.pem
   sudo rm -f cloudflared-linux-amd64.deb
-  sudo rm -f $(which cloudflared)
+  sudo rm -f "$(which cloudflared)" 2>/dev/null || true
   sudo apt remove cloudflared -y
-  echo "✅ Everything removed."
+
+  echo "✅ Everything has been removed."
 }
 
-# delete_tunnel() {
-#   select_tunnel || return 1
-#   TUNNEL_ID=$(cloudflared tunnel list | awk -v name="$TUNNEL_NAME" '$2 == name {print $1; exit}')
-#   [ -n "$TUNNEL_ID" ] || { echo "❌ Unable to find tunnel ID for '$TUNNEL_NAME'."; return 1; }
-
-#   echo "⚠️  Are you sure you want to delete tunnel '$TUNNEL_NAME' (ID: $TUNNEL_ID)? This cannot be undone."
-#   read -p "Type 'yes' to confirm: " confirm
-#   [ "$confirm" = "yes" ] || { echo "❌ Cancelled."; return 1; }
-
-#   cloudflared tunnel delete "$TUNNEL_NAME"
-#   rm -f "$CLOUDFLARED_DIR/$TUNNEL_ID.json" "$CLOUDFLARED_DIR/$TUNNEL_NAME.yml"
-#   echo "🗑️ Tunnel '$TUNNEL_NAME' and related files removed."
-# }
 
 
 delete_tunnel() {
