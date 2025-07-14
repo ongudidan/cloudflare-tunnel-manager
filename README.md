@@ -143,7 +143,7 @@ All configuration and credentials are saved in:
 **👨‍💻 Author**
 Dan Ong'udi
 📧 [ongudidan@gmail.com](mailto:ongudidan@gmail.com)
-🌐 github.com/ongudidan
+🌐 https://github.com/ongudidan
 
 Feel free to open issues or make suggestions via GitHub.
 
