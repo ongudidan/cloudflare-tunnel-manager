@@ -118,7 +118,7 @@ All configs and credentials are stored in:
 
 **Dan Ong'udi**
 📧 [ongudidan@gmail.com](mailto:ongudidan@gmail.com)
-🌐 [github.com/your\_username](https://github.com/ongudidan)
+🌐 [github.com/ongudidan](https://github.com/ongudidan)
 
 Feel free to open issues or suggestions on the GitHub repository.
 
