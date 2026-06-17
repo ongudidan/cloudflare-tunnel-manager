@@ -42,8 +42,33 @@ select_tunnel() {
 }
 
 install_cloudflared() {
-  wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-  sudo dpkg -i cloudflared-linux-amd64.deb
+  local arch
+  arch=$(dpkg --print-architecture 2>/dev/null || uname -m)
+  case "$arch" in
+    amd64|x86_64)
+      DEB_ARCH="amd64"
+      ;;
+    arm64|aarch64)
+      DEB_ARCH="arm64"
+      ;;
+    armhf|armv7l)
+      DEB_ARCH="armhf"
+      ;;
+    arm|armv6l)
+      DEB_ARCH="arm"
+      ;;
+    386|i386|i686)
+      DEB_ARCH="386"
+      ;;
+    *)
+      echo "❌ Unsupported architecture: $arch"
+      return 1
+      ;;
+  esac
+
+  echo "📥 Downloading cloudflared for $DEB_ARCH architecture..."
+  wget "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${DEB_ARCH}.deb" -O "cloudflared-linux-${DEB_ARCH}.deb"
+  sudo dpkg -i "cloudflared-linux-${DEB_ARCH}.deb"
   cloudflared --version
 }
 
@@ -258,7 +283,7 @@ delete_config_and_service() {
 # full_cleanup() {
 #   delete_config_and_service
 #   sudo rm -f "$CLOUDFLARED_DIR"/*.json "$CLOUDFLARED_DIR"/*.yml "$CLOUDFLARED_DIR"/cert.pem
-#   sudo rm -f cloudflared-linux-amd64.deb
+#   sudo rm -f cloudflared-linux-*.deb
 #   sudo rm -f $(which cloudflared)
 #   sudo apt remove cloudflared -y
 #   echo "✅ Everything removed."
@@ -277,7 +302,7 @@ full_cleanup() {
 
   delete_config_and_service
   sudo rm -f "$CLOUDFLARED_DIR"/*.json "$CLOUDFLARED_DIR"/*.yml "$CLOUDFLARED_DIR"/cert.pem
-  sudo rm -f cloudflared-linux-amd64.deb
+  sudo rm -f cloudflared-linux-*.deb
   sudo rm -f "$(which cloudflared)" 2>/dev/null || true
   sudo apt remove cloudflared -y
 
