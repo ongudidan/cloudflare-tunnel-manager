@@ -382,7 +382,9 @@ function Install-Cloudflared {
     }
 
     # Clean up downloaded MSI
-    Remove-Item $msiFile -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $msiFile) {
+        Remove-Item -LiteralPath $msiFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # ── 2. Authenticate ───────────────────────────────────────────────────────────
@@ -848,8 +850,8 @@ function Remove-Tunnel {
 
     $credFile   = Join-Path $CLOUDFLARED_DIR "$tunnelId.json"
     $configFile = Join-Path $CLOUDFLARED_DIR "$tunnelName.yml"
-    Remove-Item $credFile   -Force -ErrorAction SilentlyContinue
-    Remove-Item $configFile -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $credFile)   { Remove-Item -LiteralPath $credFile   -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $configFile) { Remove-Item -LiteralPath $configFile -Force -ErrorAction SilentlyContinue }
 
     Write-Host "✅ Tunnel '$tunnelName' and related files removed." -ForegroundColor Green
 }
