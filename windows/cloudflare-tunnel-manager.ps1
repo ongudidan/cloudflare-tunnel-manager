@@ -3,13 +3,22 @@
 .SYNOPSIS
     Cloudflare Tunnel Manager for Windows
 .DESCRIPTION
-    A powerful interactive PowerShell script to manage Cloudflare Tunnels.
+    A powerful interactive & scriptable PowerShell script to manage Cloudflare Tunnels.
     Windows replica of the Linux cloudflare-tunnel-manager.sh.
 .NOTES
     Author: Dan Ong'udi
     Email:  ongudidan@gmail.com
     Run as Administrator for service management features.
 #>
+
+[CmdletBinding()]
+param(
+    [string]$Action,
+    [string]$TunnelName,
+    [string]$Domain,
+    [string]$SubAction,
+    [switch]$Force
+)
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 $CLOUDFLARED_DIR = Join-Path $env:USERPROFILE ".cloudflared"
@@ -152,7 +161,13 @@ function Show-Menu {
 # ── Select Tunnel ──────────────────────────────────────────────────────────────
 
 function Select-Tunnel {
+    param([string]$ProvidedName)
+
     if (-not (Test-CloudflaredInstalled)) { return $null }
+
+    if (-not [string]::IsNullOrWhiteSpace($ProvidedName)) {
+        return $ProvidedName
+    }
 
     $output = Invoke-CloudflaredCmd "tunnel list"
     $lines = $output -split "`r?\n" | Where-Object { $_.Trim() -ne "" }
@@ -288,9 +303,15 @@ function Login-Cloudflare {
 # ── 3. Create Tunnel ──────────────────────────────────────────────────────────
 
 function New-Tunnel {
+    param([string]$ProvidedName)
+
     if (-not (Test-CloudflaredInstalled)) { return }
 
-    $tunnelName = Read-Host "Enter a name for the tunnel"
+    $tunnelName = $ProvidedName
+    if ([string]::IsNullOrWhiteSpace($tunnelName)) {
+        $tunnelName = Read-Host "Enter a name for the tunnel"
+    }
+
     if ([string]::IsNullOrWhiteSpace($tunnelName)) {
         Write-Host "❌ Tunnel name cannot be empty." -ForegroundColor Red
         return
@@ -350,9 +371,11 @@ ingress:
 # ── 4. Edit Tunnel Config ─────────────────────────────────────────────────────
 
 function Edit-TunnelConfig {
+    param([string]$ProvidedName)
+
     if (-not (Test-CloudflaredInstalled)) { return }
 
-    $tunnelName = Select-Tunnel
+    $tunnelName = Select-Tunnel -ProvidedName $ProvidedName
     if (-not $tunnelName) { return }
 
     $tunnelId = Get-TunnelId -TunnelName $tunnelName
@@ -397,10 +420,19 @@ ingress:
 # ── 5. Route DNS ──────────────────────────────────────────────────────────────
 
 function Add-DnsRoute {
+    param([string]$ProvidedName, [string]$ProvidedDomain)
+
     if (-not (Test-CloudflaredInstalled)) { return }
 
-    $tunnelName = Select-Tunnel
+    $tunnelName = Select-Tunnel -ProvidedName $ProvidedName
     if (-not $tunnelName) { return }
+
+    if (-not [string]::IsNullOrWhiteSpace($ProvidedDomain)) {
+        Write-Host "🔍 Routing $ProvidedDomain to tunnel '$tunnelName'..." -ForegroundColor Cyan
+        $output = Invoke-CloudflaredCmd "tunnel route dns `"$tunnelName`" `"$ProvidedDomain`""
+        Write-Host $output
+        return
+    }
 
     while ($true) {
         $domain = Read-Host "Enter subdomain to route (e.g., dev.example.com), or 'done' to finish"
@@ -425,9 +457,11 @@ function Add-DnsRoute {
 # ── 6. Run Tunnel Manually ────────────────────────────────────────────────────
 
 function Start-TunnelManual {
+    param([string]$ProvidedName)
+
     if (-not (Test-CloudflaredInstalled)) { return }
 
-    $tunnelName = Select-Tunnel
+    $tunnelName = Select-Tunnel -ProvidedName $ProvidedName
     if (-not $tunnelName) { return }
 
     $tunnelConfig = Join-Path $CLOUDFLARED_DIR "$tunnelName.yml"
@@ -444,9 +478,11 @@ function Start-TunnelManual {
 # ── 7. Toggle Auto-Start ──────────────────────────────────────────────────────
 
 function Set-TunnelAutostart {
+    param([string]$ProvidedName, [string]$ActionChoice)
+
     if (-not (Test-CloudflaredInstalled)) { return }
 
-    $tunnelName = Select-Tunnel
+    $tunnelName = Select-Tunnel -ProvidedName $ProvidedName
     if (-not $tunnelName) { return }
 
     $tunnelConfig = Join-Path $CLOUDFLARED_DIR "$tunnelName.yml"
@@ -456,11 +492,14 @@ function Set-TunnelAutostart {
         return
     }
 
-    Write-Host ""
-    Write-Host "⚙️ What would you like to do?" -ForegroundColor Yellow
-    Write-Host "1. Enable auto-start for '$tunnelName'"
-    Write-Host "2. Disable auto-start for '$tunnelName'"
-    $action = Read-Host "Select option [1-2]"
+    $action = $ActionChoice
+    if ([string]::IsNullOrWhiteSpace($action)) {
+        Write-Host ""
+        Write-Host "⚙️ What would you like to do?" -ForegroundColor Yellow
+        Write-Host "1. Enable auto-start for '$tunnelName'"
+        Write-Host "2. Disable auto-start for '$tunnelName'"
+        $action = Read-Host "Select option [1-2]"
+    }
 
     switch ($action) {
         "1" {
@@ -553,13 +592,18 @@ function Set-TunnelAutostart {
 # ── 8. Manage Service ─────────────────────────────────────────────────────────
 
 function Manage-Service {
+    param([string]$ActionChoice)
+
     if (-not (Require-Administrator)) { return }
 
-    Write-Host "a. Start / Restart"
-    Write-Host "b. Stop"
-    Write-Host "c. Status"
-    Write-Host "d. View Logs"
-    $action = Read-Host "Choose action [a-d]"
+    $action = $ActionChoice
+    if ([string]::IsNullOrWhiteSpace($action)) {
+        Write-Host "a. Start / Restart"
+        Write-Host "b. Stop"
+        Write-Host "c. Status"
+        Write-Host "d. View Logs"
+        $action = Read-Host "Choose action [a-d]"
+    }
 
     switch ($action) {
         "a" {
@@ -609,10 +653,8 @@ function Manage-Service {
         }
         "d" {
             Write-Host "📜 Fetching recent cloudflared log entries..." -ForegroundColor Cyan
-            Write-Host "   (Press Ctrl+C to stop)" -ForegroundColor Yellow
             Write-Host ""
 
-            # Try Application log first, then System log
             try {
                 $logs = Get-WinEvent -FilterHashtable @{
                     LogName      = 'Application'
@@ -625,36 +667,14 @@ function Manage-Service {
                 }
             }
             catch {
-                Write-Host "⚠️ No cloudflared entries found in Application log." -ForegroundColor Yellow
-                Write-Host "   Trying System log..." -ForegroundColor Yellow
-                try {
-                    $logs = Get-WinEvent -FilterHashtable @{
-                        LogName = 'System'
-                    } -MaxEvents 100 -ErrorAction Stop |
-                        Where-Object { $_.Message -match "cloudflared" }
-
-                    if ($logs) {
-                        foreach ($entry in ($logs | Sort-Object TimeCreated)) {
-                            $time = $entry.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
-                            Write-Host "[$time] $($entry.Message)"
-                        }
-                    }
-                    else {
-                        Write-Host "ℹ️ No cloudflared log entries found." -ForegroundColor Cyan
-                        Write-Host "   cloudflared may log to its own file at:" -ForegroundColor Cyan
-                        Write-Host "   $env:ProgramData\cloudflared\cloudflared.log" -ForegroundColor Cyan
-                        $logFile = Join-Path $env:ProgramData "cloudflared\cloudflared.log"
-                        if (Test-Path $logFile) {
-                            Write-Host ""
-                            Write-Host "📄 Last 50 lines from log file:" -ForegroundColor Cyan
-                            Get-Content $logFile -Tail 50
-                        }
-                    }
+                Write-Host "ℹ️ Checking log file at $env:ProgramData\cloudflared\cloudflared.log" -ForegroundColor Cyan
+                $logFile = Join-Path $env:ProgramData "cloudflared\cloudflared.log"
+                if (Test-Path $logFile) {
+                    Write-Host ""
+                    Get-Content $logFile -Tail 50
                 }
-                catch {
-                    Write-Host "ℹ️ Could not retrieve logs. Check manually:" -ForegroundColor Yellow
-                    Write-Host "   Event Viewer > Application or:" -ForegroundColor Yellow
-                    Write-Host "   $env:ProgramData\cloudflared\cloudflared.log" -ForegroundColor Yellow
+                else {
+                    Write-Host "ℹ️ No log file found yet." -ForegroundColor Yellow
                 }
             }
         }
@@ -677,13 +697,17 @@ function Remove-CloudflaredService {
 # ── 10. Full Uninstall ────────────────────────────────────────────────────────
 
 function Remove-Everything {
-    Write-Host "⚠️ This will completely remove cloudflared, all tunnels, configs, credentials, and services from your system." -ForegroundColor Yellow
-    Write-Host "❌ This action is irreversible and should only be done if you want a full reset." -ForegroundColor Red
+    param([switch]$ForceConfirm)
 
-    $confirm = Read-Host "Are you sure you want to proceed? [y/N]"
-    if ($confirm -notmatch '^[Yy]$') {
-        Write-Host "❌ Full cleanup cancelled." -ForegroundColor Red
-        return
+    if (-not $ForceConfirm) {
+        Write-Host "⚠️ This will completely remove cloudflared, all tunnels, configs, credentials, and services from your system." -ForegroundColor Yellow
+        Write-Host "❌ This action is irreversible and should only be done if you want a full reset." -ForegroundColor Red
+
+        $confirm = Read-Host "Are you sure you want to proceed? [y/N]"
+        if ($confirm -notmatch '^[Yy]$') {
+            Write-Host "❌ Full cleanup cancelled." -ForegroundColor Red
+            return
+        }
     }
 
     # Remove service first
@@ -723,7 +747,6 @@ function Remove-Everything {
     if ($cloudflaredPkg -and $cloudflaredPkg.UninstallString) {
         $uninstallCmd = $cloudflaredPkg.UninstallString
         if ($uninstallCmd -match "msiexec") {
-            # Extract product code and run quiet uninstall
             if ($uninstallCmd -match '\{[A-F0-9\-]+\}') {
                 $productCode = $Matches[0]
                 Start-Process msiexec.exe -ArgumentList "/x $productCode /quiet /norestart" -Wait
@@ -732,10 +755,6 @@ function Remove-Everything {
                 Start-Process cmd.exe -ArgumentList "/c $uninstallCmd /quiet" -Wait
             }
         }
-    }
-    else {
-        Write-Host "⚠️ Could not find cloudflared in installed programs." -ForegroundColor Yellow
-        Write-Host "   You may need to manually remove it from Add/Remove Programs." -ForegroundColor Yellow
     }
 
     # Refresh PATH
@@ -749,9 +768,11 @@ function Remove-Everything {
 # ── 11. Delete a Tunnel ───────────────────────────────────────────────────────
 
 function Remove-Tunnel {
+    param([string]$ProvidedName, [switch]$ForceConfirm)
+
     if (-not (Test-CloudflaredInstalled)) { return }
 
-    $tunnelName = Select-Tunnel
+    $tunnelName = Select-Tunnel -ProvidedName $ProvidedName
     if (-not $tunnelName) { return }
 
     $tunnelId = Get-TunnelId -TunnelName $tunnelName
@@ -760,11 +781,13 @@ function Remove-Tunnel {
         return
     }
 
-    Write-Host "⚠️ Are you sure you want to delete tunnel '$tunnelName' (ID: $tunnelId)? This cannot be undone." -ForegroundColor Yellow
-    $confirm = Read-Host "Type 'yes' to confirm"
-    if ($confirm -ne "yes") {
-        Write-Host "❌ Cancelled." -ForegroundColor Red
-        return
+    if (-not $ForceConfirm) {
+        Write-Host "⚠️ Are you sure you want to delete tunnel '$tunnelName' (ID: $tunnelId)? This cannot be undone." -ForegroundColor Yellow
+        $confirm = Read-Host "Type 'yes' to confirm"
+        if ($confirm -ne "yes") {
+            Write-Host "❌ Cancelled." -ForegroundColor Red
+            return
+        }
     }
 
     Write-Host "🛑 Stopping any running cloudflared processes..." -ForegroundColor Cyan
@@ -786,11 +809,6 @@ function Remove-Tunnel {
     Write-Host "🗑️ Attempting to delete the tunnel..." -ForegroundColor Cyan
     $delOut = Invoke-CloudflaredCmd "tunnel delete `"$tunnelName`""
     Write-Host $delOut
-    if ($LASTEXITCODE -ne 0 -and $delOut -match "error|failed") {
-        Write-Host "❌ Failed to delete tunnel. Please ensure no active cloudflared processes are using it." -ForegroundColor Red
-        Write-Host "   Run this to check: Get-Process cloudflared" -ForegroundColor Yellow
-        return
-    }
 
     $credFile   = Join-Path $CLOUDFLARED_DIR "$tunnelId.json"
     $configFile = Join-Path $CLOUDFLARED_DIR "$tunnelName.yml"
@@ -800,8 +818,28 @@ function Remove-Tunnel {
     Write-Host "✅ Tunnel '$tunnelName' and related files removed." -ForegroundColor Green
 }
 
-# ── Main Loop ──────────────────────────────────────────────────────────────────
+# ── Dispatcher / Main Loop ──────────────────────────────────────────────────────
 
+if (-not [string]::IsNullOrWhiteSpace($Action)) {
+    switch ($Action) {
+        "InstallCloudflared"   { Install-Cloudflared }
+        "LoginCloudflare"      { Login-Cloudflare }
+        "NewTunnel"            { New-Tunnel -ProvidedName $TunnelName }
+        "EditTunnelConfig"     { Edit-TunnelConfig -ProvidedName $TunnelName }
+        "AddDnsRoute"          { Add-DnsRoute -ProvidedName $TunnelName -ProvidedDomain $Domain }
+        "StartTunnelManual"    { Start-TunnelManual -ProvidedName $TunnelName }
+        "EnableAutostart"      { Set-TunnelAutostart -ProvidedName $TunnelName -ActionChoice "1" }
+        "DisableAutostart"     { Set-TunnelAutostart -ProvidedName $TunnelName -ActionChoice "2" }
+        "ManageService"        { Manage-Service -ActionChoice $SubAction }
+        "RemoveService"        { Remove-CloudflaredService }
+        "FullUninstall"        { Remove-Everything -ForceConfirm }
+        "DeleteTunnel"         { Remove-Tunnel -ProvidedName $TunnelName -ForceConfirm }
+        default { Write-Host "❌ Unknown Action: $Action" -ForegroundColor Red }
+    }
+    exit
+}
+
+# Interactive CLI Loop
 while ($true) {
     Show-Menu
     $choice = Read-Host

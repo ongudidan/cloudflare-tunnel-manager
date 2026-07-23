@@ -1,0 +1,7 @@
+#include <windows.h>
+
+// Application Icon (IDI_ICON1 = 100)
+100 ICON "app.ico"
+
+// Enable Visual Styles (ComCtl32 v6) and Administrator Elevation Manifest
+1 24 "app.manifest"
