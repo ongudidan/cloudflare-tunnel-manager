@@ -302,14 +302,18 @@ INT_PTR CALLBACK InputDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
             wchar_t buf[512];
             GetDlgItemTextW(hDlg, ID_INPUT_EDIT, buf, 512);
             g_inputResult = std::wstring(buf);
-            EndDialog(hDlg, IDOK);
+            DestroyWindow(hDlg);
             return TRUE;
         } else if (LOWORD(wParam) == IDCANCEL) {
             g_inputResult = L"";
-            EndDialog(hDlg, IDCANCEL);
+            DestroyWindow(hDlg);
             return TRUE;
         }
         break;
+    case WM_CLOSE:
+        g_inputResult = L"";
+        DestroyWindow(hDlg);
+        return TRUE;
     }
     return FALSE;
 }
@@ -340,8 +344,12 @@ std::wstring PromptInput(const std::wstring& title, const std::wstring& promptTe
         SetUIFont(hL, g_hFontUi); SetUIFont(hE, g_hFontUi);
         SetUIFont(hB1, g_hFontUi); SetUIFont(hB2, g_hFontUi);
 
+        SetFocus(hE);
+
         SetWindowPos(hDlg, NULL, 0, 0, 370, 150, SWP_NOMOVE | SWP_NOZORDER);
         ShowWindow(hDlg, SW_SHOW);
+
+        EnableWindow(g_hMainWnd, FALSE);
 
         MSG msg;
         while (IsWindow(hDlg) && GetMessageW(&msg, NULL, 0, 0)) {
@@ -350,6 +358,9 @@ std::wstring PromptInput(const std::wstring& title, const std::wstring& promptTe
                 DispatchMessageW(&msg);
             }
         }
+
+        EnableWindow(g_hMainWnd, TRUE);
+        SetForegroundWindow(g_hMainWnd);
     }
 
     return g_inputResult;
