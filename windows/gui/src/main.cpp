@@ -12,12 +12,13 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <thread>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "shell32.lib")
 
-// ── Control IDs ────────────────────────────────────────────────────────────────
+// ── Control IDs & Custom Window Messages ───────────────────────────────────────
 #define IDI_APP_ICON                100
 
 #define ID_TAB_CONTROL              2000
@@ -46,9 +47,13 @@
 #define ID_BTN_LOGIN_CLOUDFLARE     2031
 #define ID_BTN_FULL_UNINSTALL       2032
 
-// Log Box
+// Log & Dialog Controls
 #define ID_LOG_EDIT                 2040
 #define ID_INPUT_EDIT               2050
+
+// Thread Messages
+#define WM_THREAD_LOG_UPDATE        (WM_USER + 100)
+#define WM_THREAD_COMPLETE          (WM_USER + 101)
 
 // ── Globals ───────────────────────────────────────────────────────────────────
 HINSTANCE g_hInstance = NULL;
@@ -70,79 +75,92 @@ COLORREF g_colText = RGB(240, 240, 245);
 
 std::wstring g_inputResult = L"";
 
-// ── Helper: Execute PowerShell Action & Stream Output ─────────────────────────
-std::wstring RunPSAction(const std::wstring& actionParams) {
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(NULL, exePath, MAX_PATH);
-    std::wstring currentDir(exePath);
-    size_t lastSlash = currentDir.find_last_of(L"\\/");
-    if (lastSlash != std::wstring::npos) {
-        currentDir = currentDir.substr(0, lastSlash);
-    }
-
-    std::wstring scriptPath = currentDir + L"\\cloudflare-tunnel-manager.ps1";
-    if (GetFileAttributesW(scriptPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        scriptPath = currentDir + L"\\..\\cloudflare-tunnel-manager.ps1";
-    }
-    if (GetFileAttributesW(scriptPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        scriptPath = currentDir + L"\\..\\windows\\cloudflare-tunnel-manager.ps1";
-    }
-
-    std::wstring fullCmd = L"powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"" + scriptPath + L"\" " + actionParams;
-
-    SECURITY_ATTRIBUTES saAttr = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
-    HANDLE hReadPipe = NULL, hWritePipe = NULL;
-    if (!CreatePipe(&hReadPipe, &hWritePipe, &saAttr, 0)) return L"Error creating pipe";
-    SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
-
-    STARTUPINFOW si = { 0 };
-    si.cb = sizeof(STARTUPINFOW);
-    si.hStdOutput = hWritePipe;
-    si.hStdError = hWritePipe;
-    si.dwFlags |= STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    PROCESS_INFORMATION pi = { 0 };
-    std::vector<wchar_t> cmdBuffer(fullCmd.begin(), fullCmd.end());
-    cmdBuffer.push_back(L'\0');
-
-    if (!CreateProcessW(NULL, cmdBuffer.data(), NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        CloseHandle(hWritePipe);
-        CloseHandle(hReadPipe);
-        return L"Failed to execute process";
-    }
-
-    CloseHandle(hWritePipe);
-
-    char buffer[1024];
-    DWORD bytesRead = 0;
-    std::string resultStr = "";
-
-    while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
-        buffer[bytesRead] = '\0';
-        resultStr += buffer;
-    }
-
-    CloseHandle(hReadPipe);
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, resultStr.c_str(), -1, NULL, 0);
-    if (wlen > 0) {
-        std::vector<wchar_t> wbuf(wlen);
-        MultiByteToWideChar(CP_UTF8, 0, resultStr.c_str(), -1, &wbuf[0], wlen);
-        return std::wstring(&wbuf[0]);
-    }
-    return L"";
-}
-
+// ── Log Message Helper ─────────────────────────────────────────────────────────
 void LogMessage(const std::wstring& msg) {
     if (!g_hLogEdit) return;
     int len = GetWindowTextLengthW(g_hLogEdit);
     SendMessageW(g_hLogEdit, EM_SETSEL, (WPARAM)len, (LPARAM)len);
     std::wstring formatted = msg + L"\r\n";
     SendMessageW(g_hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)formatted.c_str());
+}
+
+// ── Helper: Asynchronous PowerShell Execution (Non-Blocking UI Thread) ───────
+void RunPSActionAsync(const std::wstring& actionParams, HWND hWnd) {
+    std::wstring* paramsCopy = new std::wstring(actionParams);
+
+    std::thread workerThread([paramsCopy, hWnd]() {
+        std::wstring params = *paramsCopy;
+        delete paramsCopy;
+
+        wchar_t exePath[MAX_PATH];
+        GetModuleFileNameW(NULL, exePath, MAX_PATH);
+        std::wstring currentDir(exePath);
+        size_t lastSlash = currentDir.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos) {
+            currentDir = currentDir.substr(0, lastSlash);
+        }
+
+        std::wstring scriptPath = currentDir + L"\\cloudflare-tunnel-manager.ps1";
+        if (GetFileAttributesW(scriptPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            scriptPath = currentDir + L"\\..\\cloudflare-tunnel-manager.ps1";
+        }
+        if (GetFileAttributesW(scriptPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            scriptPath = currentDir + L"\\..\\windows\\cloudflare-tunnel-manager.ps1";
+        }
+
+        std::wstring fullCmd = L"powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"" + scriptPath + L"\" " + params;
+
+        SECURITY_ATTRIBUTES saAttr = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
+        HANDLE hReadPipe = NULL, hWritePipe = NULL;
+        if (!CreatePipe(&hReadPipe, &hWritePipe, &saAttr, 0)) {
+            PostMessageW(hWnd, WM_THREAD_COMPLETE, 0, 0);
+            return;
+        }
+        SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+        STARTUPINFOW si = { 0 };
+        si.cb = sizeof(STARTUPINFOW);
+        si.hStdOutput = hWritePipe;
+        si.hStdError = hWritePipe;
+        si.dwFlags |= STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+
+        PROCESS_INFORMATION pi = { 0 };
+        std::vector<wchar_t> cmdBuffer(fullCmd.begin(), fullCmd.end());
+        cmdBuffer.push_back(L'\0');
+
+        if (!CreateProcessW(NULL, cmdBuffer.data(), NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+            CloseHandle(hWritePipe);
+            CloseHandle(hReadPipe);
+            PostMessageW(hWnd, WM_THREAD_COMPLETE, 0, 0);
+            return;
+        }
+
+        CloseHandle(hWritePipe);
+
+        char buffer[1024];
+        DWORD bytesRead = 0;
+
+        while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+            buffer[bytesRead] = '\0';
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, buffer, -1, NULL, 0);
+            if (wlen > 0) {
+                wchar_t* wmsg = new wchar_t[wlen + 1];
+                MultiByteToWideChar(CP_UTF8, 0, buffer, -1, wmsg, wlen);
+                wmsg[wlen] = L'\0';
+                PostMessageW(hWnd, WM_THREAD_LOG_UPDATE, 0, (LPARAM)wmsg);
+            }
+        }
+
+        CloseHandle(hReadPipe);
+        WaitForSingleObject(pi.hProcess, 3000);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+
+        PostMessageW(hWnd, WM_THREAD_COMPLETE, 0, 0);
+    });
+
+    workerThread.detach();
 }
 
 // Set Segoe UI Font on Window
@@ -354,9 +372,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         // Load Custom Application Icon into Window Titlebar and Taskbar
         HICON hIconBig = LoadIconW(g_hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
-        HICON hIconSm = (HICON)LoadImageW(g_hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR);
         if (hIconBig) SendMessageW(hWnd, WM_SETICON, ICON_BIG, (LPARAM)hIconBig);
-        if (hIconSm) SendMessageW(hWnd, WM_SETICON, ICON_SMALL, (LPARAM)hIconSm);
 
         // Create Modern Segoe UI Fonts
         g_hFontUi = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET,
@@ -435,6 +451,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
+    case WM_THREAD_LOG_UPDATE: {
+        wchar_t* wmsg = (wchar_t*)lParam;
+        if (wmsg) {
+            int len = GetWindowTextLengthW(g_hLogEdit);
+            SendMessageW(g_hLogEdit, EM_SETSEL, (WPARAM)len, (LPARAM)len);
+            SendMessageW(g_hLogEdit, EM_REPLACESEL, FALSE, (LPARAM)wmsg);
+            delete[] wmsg;
+        }
+        return 0;
+    }
+
+    case WM_THREAD_COMPLETE: {
+        RefreshTunnelList();
+        UpdateServiceStatus();
+        return 0;
+    }
+
     case WM_NOTIFY: {
         LPNMHDR pnmh = (LPNMHDR)lParam;
         if (pnmh->idFrom == ID_TAB_CONTROL && pnmh->code == TCN_SELCHANGE) {
@@ -458,15 +491,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         // ── 1. Install cloudflared ──
         case ID_BTN_INSTALL_CLOUDFLARED:
             LogMessage(L"📥 Function 1: Installing cloudflared CLI...");
-            LogMessage(RunPSAction(L"-Action InstallCloudflared"));
-            RefreshTunnelList();
-            UpdateServiceStatus();
+            RunPSActionAsync(L"-Action InstallCloudflared", hWnd);
             break;
 
         // ── 2. Authenticate ──
         case ID_BTN_LOGIN_CLOUDFLARE:
             LogMessage(L"🔐 Function 2: Launching Cloudflare login...");
-            LogMessage(RunPSAction(L"-Action LoginCloudflare"));
+            RunPSActionAsync(L"-Action LoginCloudflare", hWnd);
             break;
 
         // ── 3. Create Tunnel ──
@@ -474,8 +505,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             std::wstring newName = PromptInput(L"Create New Tunnel", L"Enter tunnel name:");
             if (!newName.empty()) {
                 LogMessage(L"⛏️ Function 3: Creating tunnel '" + newName + L"'...");
-                LogMessage(RunPSAction(L"-Action NewTunnel -TunnelName \"" + newName + L"\""));
-                RefreshTunnelList();
+                RunPSActionAsync(L"-Action NewTunnel -TunnelName \"" + newName + L"\"", hWnd);
             }
             break;
         }
@@ -484,7 +514,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case ID_BTN_EDIT_CONFIG:
             if (tName.empty()) { MessageBoxW(hWnd, L"⚠️ Please select a target tunnel from the dropdown menu first.", L"Tunnel Required", MB_ICONWARNING); break; }
             LogMessage(L"📝 Function 4: Opening config for '" + tName + L"'...");
-            RunPSAction(L"-Action EditTunnelConfig -TunnelName \"" + tName + L"\"");
+            RunPSActionAsync(L"-Action EditTunnelConfig -TunnelName \"" + tName + L"\"", hWnd);
             break;
 
         // ── 5. Route Subdomain ──
@@ -493,7 +523,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             std::wstring domain = PromptInput(L"Route Subdomain", L"Enter subdomain (e.g. dev.example.com):");
             if (!domain.empty()) {
                 LogMessage(L"🌐 Function 5: Routing " + domain + L" to '" + tName + L"'...");
-                LogMessage(RunPSAction(L"-Action AddDnsRoute -TunnelName \"" + tName + L"\" -Domain \"" + domain + L"\""));
+                RunPSActionAsync(L"-Action AddDnsRoute -TunnelName \"" + tName + L"\" -Domain \"" + domain + L"\"", hWnd);
             }
             break;
         }
@@ -502,66 +532,58 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case ID_BTN_RUN_MANUAL:
             if (tName.empty()) { MessageBoxW(hWnd, L"⚠️ Please select a target tunnel from the dropdown menu first.", L"Tunnel Required", MB_ICONWARNING); break; }
             LogMessage(L"🚀 Function 6: Starting manual tunnel for '" + tName + L"'...");
-            LogMessage(RunPSAction(L"-Action StartTunnelManual -TunnelName \"" + tName + L"\""));
+            RunPSActionAsync(L"-Action StartTunnelManual -TunnelName \"" + tName + L"\"", hWnd);
             break;
 
         // ── 7. Enable Autostart ──
         case ID_BTN_ENABLE_BOOT:
             if (tName.empty()) { MessageBoxW(hWnd, L"⚠️ Please select a target tunnel from the dropdown menu first.", L"Tunnel Required", MB_ICONWARNING); break; }
             LogMessage(L"⚡ Function 7: Enabling autostart service for '" + tName + L"'...");
-            LogMessage(RunPSAction(L"-Action EnableAutostart -TunnelName \"" + tName + L"\""));
-            UpdateServiceStatus();
+            RunPSActionAsync(L"-Action EnableAutostart -TunnelName \"" + tName + L"\"", hWnd);
             break;
 
         // ── 7. Disable Autostart ──
         case ID_BTN_DISABLE_BOOT:
             if (tName.empty()) { MessageBoxW(hWnd, L"⚠️ Please select a target tunnel from the dropdown menu first.", L"Tunnel Required", MB_ICONWARNING); break; }
             LogMessage(L"🛑 Function 7: Disabling autostart service for '" + tName + L"'...");
-            LogMessage(RunPSAction(L"-Action DisableAutostart -TunnelName \"" + tName + L"\""));
-            UpdateServiceStatus();
+            RunPSActionAsync(L"-Action DisableAutostart -TunnelName \"" + tName + L"\"", hWnd);
             break;
 
         // ── 8. Start Service ──
         case ID_BTN_START_SVC:
             LogMessage(L"🚀 Function 8: Starting Cloudflared service...");
-            LogMessage(RunPSAction(L"-Action ManageService -SubAction \"a\""));
-            UpdateServiceStatus();
+            RunPSActionAsync(L"-Action ManageService -SubAction \"a\"", hWnd);
             break;
 
         // ── 8. Stop Service ──
         case ID_BTN_STOP_SVC:
             LogMessage(L"🛑 Function 8: Stopping Cloudflared service...");
-            LogMessage(RunPSAction(L"-Action ManageService -SubAction \"b\""));
-            UpdateServiceStatus();
+            RunPSActionAsync(L"-Action ManageService -SubAction \"b\"", hWnd);
             break;
 
         // ── 8. Restart Service ──
         case ID_BTN_RESTART_SVC:
             LogMessage(L"🔄 Function 8: Restarting Cloudflared service...");
-            LogMessage(RunPSAction(L"-Action ManageService -SubAction \"a\""));
-            UpdateServiceStatus();
+            RunPSActionAsync(L"-Action ManageService -SubAction \"a\"", hWnd);
             break;
 
         // ── 8. View Service Logs ──
         case ID_BTN_VIEW_LOGS:
             LogMessage(L"📜 Function 8: Fetching Cloudflared service logs...");
-            LogMessage(RunPSAction(L"-Action ManageService -SubAction \"d\""));
+            RunPSActionAsync(L"-Action ManageService -SubAction \"d\"", hWnd);
             break;
 
         // ── 9. Delete Service ──
         case ID_BTN_REMOVE_SVC:
             LogMessage(L"🧹 Function 9: Removing Cloudflared Windows service...");
-            LogMessage(RunPSAction(L"-Action RemoveService"));
-            UpdateServiceStatus();
+            RunPSActionAsync(L"-Action RemoveService", hWnd);
             break;
 
         // ── 10. Full Uninstall ──
         case ID_BTN_FULL_UNINSTALL:
             if (MessageBoxW(hWnd, L"Are you sure you want to run FULL UNINSTALL? This removes cloudflared, all tunnels, configs, and services.", L"Confirm Full Uninstall", MB_YESNO | MB_ICONWARNING) == IDYES) {
                 LogMessage(L"❌ Function 10: Running full system uninstall...");
-                LogMessage(RunPSAction(L"-Action FullUninstall"));
-                RefreshTunnelList();
-                UpdateServiceStatus();
+                RunPSActionAsync(L"-Action FullUninstall", hWnd);
             }
             break;
 
@@ -570,8 +592,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (tName.empty()) { MessageBoxW(hWnd, L"⚠️ Please select a target tunnel from the dropdown menu first.", L"Tunnel Required", MB_ICONWARNING); break; }
             if (MessageBoxW(hWnd, (L"Are you sure you want to delete tunnel '" + tName + L"'?").c_str(), L"Confirm Tunnel Deletion", MB_YESNO | MB_ICONWARNING) == IDYES) {
                 LogMessage(L"🗑️ Function 11: Deleting tunnel '" + tName + L"'...");
-                LogMessage(RunPSAction(L"-Action DeleteTunnel -TunnelName \"" + tName + L"\""));
-                RefreshTunnelList();
+                RunPSActionAsync(L"-Action DeleteTunnel -TunnelName \"" + tName + L"\"", hWnd);
             }
             break;
         }
