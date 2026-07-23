@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo =========================================================
-echo 🔨 Building Cloudflare Tunnel Manager GUI (C++)
+echo 🔨 Building Cloudflare Tunnel Manager GUI (100%% Static C++)
 echo =========================================================
 
 set "GUI_DIR=%~dp0"
@@ -59,9 +59,9 @@ if exist "%GUI_DIR%\resource.rc" (
     "%WINDRES%" "%GUI_DIR%\resource.rc" -O coff -o "%GUI_DIR%\resource.o"
 )
 
-REM Build Main Executable
+REM Build Main Executable with 100% Static Linking (-static -static-libgcc -static-libstdc++)
 echo 🚀 Compiling CloudflareTunnelManagerGUI.exe...
-"%COMPILER%" -O2 -std=c++17 -municode "%GUI_DIR%\src\main.cpp" "%GUI_DIR%\resource.o" -o "%GUI_DIR%\CloudflareTunnelManagerGUI.exe" -mwindows -lcomctl32 -ldwmapi -lole32 -luser32 -lgdi32 -ladvapi32
+"%COMPILER%" -O2 -std=c++17 -municode -static -static-libgcc -static-libstdc++ "%GUI_DIR%\src\main.cpp" "%GUI_DIR%\resource.o" -o "%GUI_DIR%\CloudflareTunnelManagerGUI.exe" -mwindows -lcomctl32 -ldwmapi -lole32 -luser32 -lgdi32 -ladvapi32
 
 if %ERRORLEVEL% == 0 (
     echo.
