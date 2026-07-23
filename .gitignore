@@ -1,2 +1,5 @@
 ./git
 *.deb
+*.o
+dist/
+Cloudflare-Tunnel-Manager-Windows.zip
