@@ -223,6 +223,50 @@ function Get-TunnelId {
     return $null
 }
 
+# ── Auto-Config Generator Helper ───────────────────────────────────────────────
+
+function Ensure-TunnelConfig {
+    param([string]$TunnelName)
+
+    if ([string]::IsNullOrWhiteSpace($TunnelName)) { return $null }
+
+    $tunnelId = Get-TunnelId -TunnelName $TunnelName
+    if (-not $tunnelId) {
+        Write-Host "❌ Unable to find Tunnel ID for '$TunnelName' in Cloudflare account." -ForegroundColor Red
+        return $null
+    }
+
+    if (-not (Test-Path $CLOUDFLARED_DIR)) {
+        New-Item -ItemType Directory -Path $CLOUDFLARED_DIR -Force | Out-Null
+    }
+
+    $tunnelConfig    = Join-Path $CLOUDFLARED_DIR "$TunnelName.yml"
+    $credentialsFile = (Join-Path $CLOUDFLARED_DIR "$tunnelId.json") -replace '\\', '/'
+
+    # Auto-create missing .yml config file on demand
+    if (-not (Test-Path $tunnelConfig)) {
+        Write-Host "🛠️ Config file missing for pre-existing tunnel '$TunnelName'." -ForegroundColor Yellow
+        Write-Host "⚙️ Auto-generating configuration file at: $tunnelConfig" -ForegroundColor Cyan
+
+        $configContent = @"
+tunnel: $tunnelId
+credentials-file: $credentialsFile
+
+ingress:
+  # Main hostname ingress rule (e.g. dev server)
+  - hostname: dev.fortunedevs.com
+    service: http://localhost:8182  # Replace with your local application port (e.g. 8182)
+
+  # Catch-all fallback for undefined subdomains
+  - service: http_status:404
+"@
+        Set-Content -Path $tunnelConfig -Value $configContent -Encoding UTF8
+        Write-Host "✅ Auto-created local configuration file for '$TunnelName'." -ForegroundColor Green
+    }
+
+    return $tunnelConfig
+}
+
 # ── 1. Install cloudflared ────────────────────────────────────────────────────
 
 function Install-Cloudflared {
@@ -335,36 +379,10 @@ function New-Tunnel {
         return
     }
 
-    # Ensure .cloudflared directory exists
-    if (-not (Test-Path $CLOUDFLARED_DIR)) {
-        New-Item -ItemType Directory -Path $CLOUDFLARED_DIR -Force | Out-Null
-    }
+    # Auto-generate config file
+    $null = Ensure-TunnelConfig -TunnelName $tunnelName
 
-    $credentialsFile = (Join-Path $CLOUDFLARED_DIR "$tunnelId.json") -replace '\\', '/'
-    $tunnelConfig    = Join-Path $CLOUDFLARED_DIR "$tunnelName.yml"
-
-    Write-Host "🗒️ Creating config at: $tunnelConfig" -ForegroundColor Cyan
-
-    $configContent = @"
-tunnel: $tunnelId
-credentials-file: $credentialsFile
-
-ingress:
-  # Subdomain 1 (e.g., dev server)
-  - hostname: dev.fortunedevs.com
-    service: http://localhost:80  # Change to your local server port (e.g., port 80)
-
-  # Subdomain 2 (optional, admin dashboard)
-  - hostname: admin.fortunedevs.com
-    service: http://localhost:8080
-
-  # Catch-all fallback for undefined subdomains
-  - service: http_status:404
-"@
-
-    Set-Content -Path $tunnelConfig -Value $configContent -Encoding UTF8
-
-    Write-Host "✅ Tunnel and example config created successfully." -ForegroundColor Green
+    Write-Host "✅ Tunnel created successfully." -ForegroundColor Green
     Write-Host "🔙 Now run option 4 to edit the config, or 5 to add DNS routes." -ForegroundColor Yellow
 }
 
@@ -378,40 +396,8 @@ function Edit-TunnelConfig {
     $tunnelName = Select-Tunnel -ProvidedName $ProvidedName
     if (-not $tunnelName) { return }
 
-    $tunnelId = Get-TunnelId -TunnelName $tunnelName
-
-    $tunnelConfig    = Join-Path $CLOUDFLARED_DIR "$tunnelName.yml"
-    $credentialsFile = (Join-Path $CLOUDFLARED_DIR "$tunnelId.json") -replace '\\', '/'
-
-    if (-not (Test-Path $tunnelConfig)) {
-        Write-Host "⚠️ Config file for '$tunnelName' not found." -ForegroundColor Yellow
-        Write-Host "🛠️ Creating default config at $tunnelConfig" -ForegroundColor Cyan
-
-        # Ensure directory exists
-        if (-not (Test-Path $CLOUDFLARED_DIR)) {
-            New-Item -ItemType Directory -Path $CLOUDFLARED_DIR -Force | Out-Null
-        }
-
-        $configContent = @"
-tunnel: $tunnelId
-credentials-file: $credentialsFile
-
-ingress:
-  # Subdomain 1 (e.g., dev server)
-  - hostname: dev.fortunedevs.com
-    service: http://localhost:80  # Change to your local server port (e.g., port 80)
-
-  # Subdomain 2 (optional, admin dashboard)
-  - hostname: admin.fortunedevs.com
-    service: http://localhost:8080
-
-  # Catch-all fallback for undefined subdomains
-  - service: http_status:404
-"@
-
-        Set-Content -Path $tunnelConfig -Value $configContent -Encoding UTF8
-        Write-Host "✅ Default config created." -ForegroundColor Green
-    }
+    $tunnelConfig = Ensure-TunnelConfig -TunnelName $tunnelName
+    if (-not $tunnelConfig) { return }
 
     Write-Host "📄 Opening $tunnelConfig" -ForegroundColor Cyan
     Start-Process notepad.exe -ArgumentList $tunnelConfig -Wait
@@ -426,6 +412,9 @@ function Add-DnsRoute {
 
     $tunnelName = Select-Tunnel -ProvidedName $ProvidedName
     if (-not $tunnelName) { return }
+
+    $tunnelConfig = Ensure-TunnelConfig -TunnelName $tunnelName
+    if (-not $tunnelConfig) { return }
 
     if (-not [string]::IsNullOrWhiteSpace($ProvidedDomain)) {
         Write-Host "🔍 Routing $ProvidedDomain to tunnel '$tunnelName'..." -ForegroundColor Cyan
@@ -464,12 +453,8 @@ function Start-TunnelManual {
     $tunnelName = Select-Tunnel -ProvidedName $ProvidedName
     if (-not $tunnelName) { return }
 
-    $tunnelConfig = Join-Path $CLOUDFLARED_DIR "$tunnelName.yml"
-
-    if (-not (Test-Path $tunnelConfig)) {
-        Write-Host "❌ Config file not found: $tunnelConfig" -ForegroundColor Red
-        return
-    }
+    $tunnelConfig = Ensure-TunnelConfig -TunnelName $tunnelName
+    if (-not $tunnelConfig) { return }
 
     Write-Host "🚀 Starting tunnel '$tunnelName'..." -ForegroundColor Cyan
     & cloudflared tunnel --config $tunnelConfig run $tunnelName
@@ -485,12 +470,8 @@ function Set-TunnelAutostart {
     $tunnelName = Select-Tunnel -ProvidedName $ProvidedName
     if (-not $tunnelName) { return }
 
-    $tunnelConfig = Join-Path $CLOUDFLARED_DIR "$tunnelName.yml"
-
-    if (-not (Test-Path $tunnelConfig)) {
-        Write-Host "❌ Config file not found: $tunnelConfig" -ForegroundColor Red
-        return
-    }
+    $tunnelConfig = Ensure-TunnelConfig -TunnelName $tunnelName
+    if (-not $tunnelConfig) { return }
 
     $action = $ActionChoice
     if ([string]::IsNullOrWhiteSpace($action)) {
