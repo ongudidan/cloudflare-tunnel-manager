@@ -223,7 +223,52 @@ function Get-TunnelId {
     return $null
 }
 
-# ── Auto-Config Generator Helper ───────────────────────────────────────────────
+# ── Credentials & Config Auto-Generators ────────────────────────────────────────
+
+function Ensure-TunnelCredentials {
+    param([string]$TunnelName, [string]$TunnelId)
+
+    if ([string]::IsNullOrWhiteSpace($TunnelName) -or [string]::IsNullOrWhiteSpace($TunnelId)) { return $false }
+
+    if (-not (Test-Path $CLOUDFLARED_DIR)) {
+        New-Item -ItemType Directory -Path $CLOUDFLARED_DIR -Force | Out-Null
+    }
+
+    $jsonPath = Join-Path $CLOUDFLARED_DIR "$TunnelId.json"
+
+    # Always verify local JSON credentials file exists and is valid
+    if (-not (Test-Path $jsonPath)) {
+        Write-Host "🔍 Local credentials JSON missing for '$TunnelName'. Fetching token from Cloudflare..." -ForegroundColor Cyan
+
+        $tokenRaw = Invoke-CloudflaredCmd "tunnel token `"$TunnelName`""
+        $tokenStr = ($tokenRaw -split "`r?\n" | Where-Object { $_.Trim() -ne "" -and $_ -notmatch 'INF|ERR|WARN' }) -join ""
+
+        if (-not [string]::IsNullOrWhiteSpace($tokenStr)) {
+            try {
+                $bytes = [System.Convert]::FromBase64String($tokenStr.Trim())
+                $jsonText = [System.Text.Encoding]::UTF8.GetString($bytes)
+                $tokenObj = ConvertFrom-Json $jsonText
+
+                if ($tokenObj.a -and $tokenObj.t -and $tokenObj.s) {
+                    $credMap = [ordered]@{
+                        AccountTag   = $tokenObj.a
+                        TunnelID     = $tokenObj.t
+                        TunnelSecret = $tokenObj.s
+                    }
+                    $credJson = $credMap | ConvertTo-Json -Depth 2
+                    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                    [System.IO.File]::WriteAllText($jsonPath, $credJson, $utf8NoBom)
+                    Write-Host "✅ Auto-generated local credentials JSON for '$TunnelName'." -ForegroundColor Green
+                    return $true
+                }
+            }
+            catch {
+                Write-Host "⚠️ Failed to parse token for '$TunnelName': $_" -ForegroundColor Yellow
+            }
+        }
+    }
+    return (Test-Path $jsonPath)
+}
 
 function Ensure-TunnelConfig {
     param([string]$TunnelName)
@@ -239,6 +284,9 @@ function Ensure-TunnelConfig {
     if (-not (Test-Path $CLOUDFLARED_DIR)) {
         New-Item -ItemType Directory -Path $CLOUDFLARED_DIR -Force | Out-Null
     }
+
+    # Ensure credentials JSON exists locally
+    $null = Ensure-TunnelCredentials -TunnelName $TunnelName -TunnelId $tunnelId
 
     $tunnelConfig    = Join-Path $CLOUDFLARED_DIR "$TunnelName.yml"
     $credentialsFile = (Join-Path $CLOUDFLARED_DIR "$tunnelId.json") -replace '\\', '/'
@@ -260,7 +308,8 @@ ingress:
   # Catch-all fallback for undefined subdomains
   - service: http_status:404
 "@
-        Set-Content -Path $tunnelConfig -Value $configContent -Encoding UTF8
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($tunnelConfig, $configContent, $utf8NoBom)
         Write-Host "✅ Auto-created local configuration file for '$TunnelName'." -ForegroundColor Green
     }
 
@@ -379,7 +428,7 @@ function New-Tunnel {
         return
     }
 
-    # Auto-generate config file
+    # Auto-generate config & creds
     $null = Ensure-TunnelConfig -TunnelName $tunnelName
 
     Write-Host "✅ Tunnel created successfully." -ForegroundColor Green
@@ -495,17 +544,22 @@ function Set-TunnelAutostart {
                 New-Item -ItemType Directory -Path $programDataDir -Force | Out-Null
             }
 
-            # Get Tunnel ID
+            # Get Tunnel ID and ensure local credentials exist
             $tunnelId = Get-TunnelId -TunnelName $tunnelName
             if ($tunnelId) {
+                $null = Ensure-TunnelCredentials -TunnelName $tunnelName -TunnelId $tunnelId
+
                 $userCredFile = Join-Path $CLOUDFLARED_DIR "$tunnelId.json"
                 if (Test-Path $userCredFile) {
-                    # Copy credentials file into ProgramData for background system service access on boot
-                    Copy-Item -Path $userCredFile -Destination (Join-Path $programDataDir "$tunnelId.json") -Force
+                    # Save credentials into ProgramData as UTF-8 WITHOUT BOM for Go cloudflared compatibility
+                    $programDataCredFile = Join-Path $programDataDir "$tunnelId.json"
+                    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                    $credText = [System.IO.File]::ReadAllText($userCredFile)
+                    [System.IO.File]::WriteAllText($programDataCredFile, $credText, $utf8NoBom)
                 }
             }
 
-            # Copy and prepare config file in ProgramData
+            # Copy and prepare config file in ProgramData (UTF-8 WITHOUT BOM)
             $programDataConfig = Join-Path $programDataDir "config.yml"
             $configContent = Get-Content $tunnelConfig -Raw
 
@@ -516,7 +570,8 @@ function Set-TunnelAutostart {
                 }
             }
 
-            Set-Content -Path $programDataConfig -Value $configContent -Encoding UTF8
+            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText($programDataConfig, $configContent, $utf8NoBom)
 
             # Locate cloudflared binary executable path
             $cloudflaredExe = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
