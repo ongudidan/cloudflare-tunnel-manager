@@ -140,34 +140,75 @@ All configuration and credentials are saved in:
 
 ---
 
-## 🐧 WSL Setup (Accessing Windows Localhost)
+## 🐧 WSL Setup Guide (Localhost Access & Auto-Start on Boot)
 
-If you are running **WSL Ubuntu** on Windows and need WSL applications to access services running on Windows `localhost` (such as **QZ Tray** on port `8182` / `8181`, local APIs, or databases):
+If you are running **WSL Ubuntu** on Windows, follow these steps to configure **Windows localhost sharing** (e.g., for **QZ Tray** on port `8182` / `8181`) and **auto-starting WSL Ubuntu on Windows boot**.
 
-### 1. Enable Mirrored Networking in Windows
+---
+
+### 1. Enable Windows Localhost Access in WSL
 Open **PowerShell** on Windows and run:
 
 ```powershell
 Set-Content -Path "$env:USERPROFILE\.wslconfig" -Value "[wsl2]`nnetworkingMode=mirrored"
 ```
 
-> **Note:** Mirrored networking mode shares network interfaces between Windows and WSL 2, allowing `localhost` inside WSL to map directly to Windows `localhost`.
+> **Note:** Mirrored networking mode allows `localhost` inside WSL to directly connect to services running on Windows `localhost` (like QZ Tray, local APIs, or databases).
 
-### 2. Restart WSL
-In PowerShell, restart WSL to apply the new configuration:
+---
+
+### 2. Auto-Start WSL Ubuntu on Windows Boot
+
+#### Option A: Auto-start on User Login (Recommended - Silent Background)
+Run this single command in Windows **PowerShell** to create a silent startup script in your Windows Startup folder:
+
+```powershell
+$path = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\StartWSL.vbs"; Set-Content -Path $path -Value 'Set WshShell = CreateObject("WScript.Shell")'; Add-Content -Path $path -Value 'WshShell.Run "wsl -d Ubuntu", 0, False'
+```
+
+#### Option B: Auto-start on PC Boot (Unattended - Before User Login)
+1. Press `Win + R`, type **`taskschd.msc`** and press **Enter**.
+2. Click **Create Task...** on the right panel.
+3. Under **General**:
+   * Name: `Start WSL Ubuntu`
+   * Select: **Run whether user is logged on or not**
+4. Under **Triggers**:
+   * Click **New...** -> Select **At startup**.
+5. Under **Actions**:
+   * Click **New...** -> Program: `wsl.exe`, Arguments: `-d Ubuntu`
+6. Click **OK** and enter your Windows credentials to save.
+
+---
+
+### 3. Enable Systemd Service Auto-Start & Default User Auto-Login
+Inside your WSL Ubuntu terminal, set `systemd=true` and set your default user so WSL automatically logs in as your user on boot without prompting for a password:
+
+```bash
+sudo bash -c 'echo -e "[boot]\nsystemd=true\n\n[user]\ndefault=$USER" > /etc/wsl.conf'
+```
+
+> **Note:** WSL automatically logs in as your default user (`default=$USER`) without requiring a password on boot. Password prompts are only required when running `sudo` commands inside the terminal.
+```
+
+---
+
+### 4. Restart WSL to Apply All Changes
+Run in Windows **PowerShell**:
 
 ```powershell
 wsl --shutdown
 ```
 
-### 3. Test Access inside WSL Ubuntu
-Open your Ubuntu terminal and verify connection to your Windows service:
+---
+
+### 5. Verify Setup in WSL Ubuntu
+Open your Ubuntu terminal and test:
 
 ```bash
-# Example: Testing connection to QZ Tray (port 8182)
+# Test connection to QZ Tray (Port 8182)
 curl http://localhost:8182
 
-# Example: Testing secure endpoint (port 8181)
+# Test secure endpoint (Port 8181)
 curl -k https://localhost:8181
 ```
 
