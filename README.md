@@ -140,6 +140,39 @@ All configuration and credentials are saved in:
 
 ---
 
+## 🐧 WSL Setup (Accessing Windows Localhost)
+
+If you are running **WSL Ubuntu** on Windows and need WSL applications to access services running on Windows `localhost` (such as **QZ Tray** on port `8182` / `8181`, local APIs, or databases):
+
+### 1. Enable Mirrored Networking in Windows
+Open **PowerShell** on Windows and run:
+
+```powershell
+Set-Content -Path "$env:USERPROFILE\.wslconfig" -Value "[wsl2]`nnetworkingMode=mirrored"
+```
+
+> **Note:** Mirrored networking mode shares network interfaces between Windows and WSL 2, allowing `localhost` inside WSL to map directly to Windows `localhost`.
+
+### 2. Restart WSL
+In PowerShell, restart WSL to apply the new configuration:
+
+```powershell
+wsl --shutdown
+```
+
+### 3. Test Access inside WSL Ubuntu
+Open your Ubuntu terminal and verify connection to your Windows service:
+
+```bash
+# Example: Testing connection to QZ Tray (port 8182)
+curl http://localhost:8182
+
+# Example: Testing secure endpoint (port 8181)
+curl -k https://localhost:8181
+```
+
+---
+
 ## 👨‍💻 Author
 Dan Ong'udi
 📧 [ongudidan@gmail.com](mailto:ongudidan@gmail.com)
