@@ -140,7 +140,7 @@ credentials-file: $CREDENTIALS_FILE
 ingress:
   # Main hostname ingress rule (e.g. dev server)
   - hostname: dev.fortunedevs.com
-    service: http://localhost:80  # Replace with your local application port (e.g. 80)
+    service: http://localhost:80  # For WSL accessing Windows host services (e.g. QZ Tray), use http://host.wsl.internal:8182 or http://localhost:8182
 
   # Catch-all fallback for undefined subdomains
   - service: http_status:404

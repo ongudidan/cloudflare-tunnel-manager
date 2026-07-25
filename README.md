@@ -140,20 +140,27 @@ All configuration and credentials are saved in:
 
 ---
 
-## 🐧 WSL Setup Guide (Localhost Access & Auto-Start on Boot)
+## 🐧 WSL Setup Guide (Windows Host Access & Auto-Start on Boot)
 
-If you are running **WSL Ubuntu** on Windows, follow these steps to configure **Windows localhost sharing** (e.g., for **QZ Tray** on port `8182` / `8181`) and **auto-starting WSL Ubuntu on Windows boot**.
+If you are running **WSL Ubuntu** on Windows, follow these steps to configure **Windows host access** (e.g., accessing **QZ Tray** or host services via `host.wsl.internal:8182`) and **auto-starting WSL Ubuntu on Windows boot**.
 
 ---
 
-### 1. Enable Windows Localhost Access in WSL
-Open **PowerShell** on Windows and run:
+### 1. Accessing Windows Host Services from WSL
+To connect to services running on your Windows host machine (such as QZ Tray on port `8182` / `8181`), configure your tunnel ingress rule using `host.wsl.internal`:
+
+```yaml
+ingress:
+  - hostname: print.fortunedevs.com
+    service: http://host.wsl.internal:8182
+```
+
+👉 **Optional (Localhost Mirroring):**
+To also allow `localhost` inside WSL to map directly to Windows `localhost`, run in Windows **PowerShell**:
 
 ```powershell
 Set-Content -Path "$env:USERPROFILE\.wslconfig" -Value "[wsl2]`nnetworkingMode=mirrored"
 ```
-
-> **Note:** Mirrored networking mode allows `localhost` inside WSL to directly connect to services running on Windows `localhost` (like QZ Tray, local APIs, or databases).
 
 ---
 
@@ -188,7 +195,6 @@ sudo bash -c 'echo -e "[boot]\nsystemd=true\n\n[user]\ndefault=$USER" > /etc/wsl
 ```
 
 > **Note:** WSL automatically logs in as your default user (`default=$USER`) without requiring a password on boot. Password prompts are only required when running `sudo` commands inside the terminal.
-```
 
 ---
 
@@ -205,11 +211,14 @@ wsl --shutdown
 Open your Ubuntu terminal and test:
 
 ```bash
-# Test connection to QZ Tray (Port 8182)
-curl http://localhost:8182
+# Test connection to QZ Tray via host.wsl.internal (Port 8182)
+curl http://host.wsl.internal:8182
 
 # Test secure endpoint (Port 8181)
-curl -k https://localhost:8181
+curl -k https://host.wsl.internal:8181
+
+# Test via localhost (if mirrored networking mode is enabled)
+curl http://localhost:8182
 ```
 
 ---
